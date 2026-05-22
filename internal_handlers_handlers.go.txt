@@ -1,0 +1,136 @@
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/sourceasia/backend/internal/models"
+	"github.com/sourceasia/backend/internal/services"
+)
+
+type Handler struct {
+	rateService    *services.RateLimitService
+	productService *services.ProductService
+}
+
+func NewHandler(rs *services.RateLimitService, ps *services.ProductService) *Handler {
+	return &Handler{rateService: rs, productService: ps}
+}
+
+func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) HandleRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req models.RateLimitRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+
+	if req.UserID == "" {
+		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "user_id required"})
+		return
+	}
+
+	if !h.rateService.ProcessRequest(req.UserID) {
+		jsonResponse(w, http.StatusTooManyRequests, map[string]string{"error": "rate limit exceeded"})
+		return
+	}
+
+	jsonResponse(w, http.StatusCreated, map[string]string{"status": "accepted"})
+}
+
+func (h *Handler) HandleStats(w http.ResponseWriter, r *http.Request) {
+	jsonResponse(w, http.StatusOK, h.rateService.GetStats())
+}
+
+func (h *Handler) HandleProducts(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var p models.Product
+		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+		created, err := h.productService.CreateProduct(&p)
+		if err != nil {
+			status := http.StatusBadRequest
+			if strings.Contains(err.Error(), "conflict") { status = http.StatusConflict }
+			jsonResponse(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonResponse(w, http.StatusCreated, created)
+
+	case http.MethodGet:
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		if limit <= 0 { limit = 20 }
+		if limit > 100 { limit = 100 }
+		
+		items := h.productService.ListProducts(limit, offset)
+		jsonResponse(w, http.StatusOK, models.ProductListResponse{
+			Items:  items,
+			Limit:  limit,
+			Offset: offset,
+		})
+	}
+}
+
+func (h *Handler) HandleProductByID(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/products/")
+	if id == "" {
+		h.HandleProducts(w, r)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		p, ok := h.productService.GetByID(id)
+		if !ok {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		jsonResponse(w, http.StatusOK, p)
+
+	case http.MethodPost:
+		if !strings.HasSuffix(r.URL.Path, "/media") {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		id = strings.TrimSuffix(id, "/media")
+		var req models.AddMediaRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+			return
+		}
+		if err := h.productService.AddMedia(id, req); err != nil {
+			status := http.StatusBadRequest
+			if err.Error() == "not found" { status = http.StatusNotFound }
+			jsonResponse(w, status, map[string]string{"error": err.Error()})
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"status": "media added"})
+	}
+}
+
+func jsonResponse(w http.ResponseWriter, code int, payload interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(payload)
+}
+
+func (s *ProductService) ListProducts(limit, offset int) []models.ProductSummary {
+	return s.store.ListProducts(limit, offset)
+}
+
+func (s *ProductService) GetByID(id string) (*models.Product, bool) {
+	return s.store.GetProductByID(id)
+}

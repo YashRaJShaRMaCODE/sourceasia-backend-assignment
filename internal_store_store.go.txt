@@ -1,0 +1,156 @@
+package store
+
+import (
+	"sync"
+	"time"
+
+	"github.com/sourceasia/backend/internal/models"
+)
+
+type InMemoryStore struct {
+	mu           sync.RWMutex
+	userWindows  map[string][]time.Time
+	userRejects  map[string]int
+	products     map[string]*models.Product
+	productOrder []string
+	skuMap       map[string]string
+}
+
+func NewInMemoryStore() *InMemoryStore {
+	return &InMemoryStore{
+		userWindows:  make(map[string][]time.Time),
+		userRejects:  make(map[string]int),
+		products:     make(map[string]*models.Product),
+		productOrder: make([]string, 0),
+		skuMap:       make(map[string]string),
+	}
+}
+
+// Rate Limiting Logic
+func (s *InMemoryStore) AllowRequest(userID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	window := now.Add(-time.Minute)
+
+	// Clean old entries
+	var active []time.Time
+	for _, t := range s.userWindows[userID] {
+		if t.After(window) {
+			active = append(active, t)
+		}
+	}
+
+	if len(active) >= 5 {
+		s.userRejects[userID]++
+		s.userWindows[userID] = active
+		return false
+	}
+
+	active = append(active, now)
+	s.userWindows[userID] = active
+	return true
+}
+
+func (s *InMemoryStore) GetStats() map[string]models.UserStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	stats := make(map[string]models.UserStats)
+	now := time.Now()
+	window := now.Add(-time.Minute)
+
+	// Combine data
+	users := make(map[string]bool)
+	for k := range s.userWindows { users[k] = true }
+	for k := range s.userRejects { users[k] = true }
+
+	for userID := range users {
+		count := 0
+		for _, t := range s.userWindows[userID] {
+			if t.After(window) {
+				count++
+			}
+		}
+		stats[userID] = models.UserStats{
+			AcceptedCurrentWindow: count,
+			RejectedCumulative:    s.userRejects[userID],
+		}
+	}
+	return stats
+}
+
+// Product Logic
+func (s *InMemoryStore) AddProduct(p *models.Product) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.products[p.ID] = p
+	s.productOrder = append(s.productOrder, p.ID)
+	s.skuMap[p.SKU] = p.ID
+	return nil
+}
+
+func (s *InMemoryStore) GetProductByID(id string) (*models.Product, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	p, ok := s.products[id]
+	return p, ok
+}
+
+func (s *InMemoryStore) GetProductBySKU(sku string) (string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	id, ok := s.skuMap[sku]
+	return id, ok
+}
+
+func (s *InMemoryStore) ListProducts(limit, offset int) []models.ProductSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if offset >= len(s.productOrder) {
+		return []models.ProductSummary{}
+	}
+
+	end := offset + limit
+	if end > len(s.productOrder) {
+		end = len(s.productOrder)
+	}
+
+	res := make([]models.ProductSummary, 0, end-offset)
+	for i := offset; i < end; i++ {
+		id := s.productOrder[i]
+		p := s.products[id]
+		
+		thumb := ""
+		if len(p.ImageURLs) > 0 {
+			thumb = p.ImageURLs[0]
+		}
+
+		res = append(res, models.ProductSummary{
+			ID:           p.ID,
+			Name:         p.Name,
+			SKU:          p.SKU,
+			ImageCount:   len(p.ImageURLs),
+			VideoCount:   len(p.VideoURLs),
+			ThumbnailURL: thumb,
+		})
+	}
+	return res
+}
+
+func (s *InMemoryStore) UpdateProductMedia(id string, imgs, vids []string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	p, ok := s.products[id]
+	if !ok {
+		return false
+	}
+
+	p.ImageURLs = append(p.ImageURLs, imgs...)
+	p.VideoURLs = append(p.VideoURLs, vids...)
+	return true
+}
