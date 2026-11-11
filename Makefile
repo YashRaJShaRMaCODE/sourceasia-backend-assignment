@@ -7,7 +7,8 @@ test:
 	go test -v -race ./...
 
 build:
-	go build -o bin/server cmd/server/main.go
+	mkdir -p bin
+	go build -o bin/server ./cmd/server
 
 docker-build:
 	docker build -t sourceasia-backend .

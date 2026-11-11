@@ -3,9 +3,8 @@ package tests
 import (
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/sourceasia/backend/internal/store"
+	"github.com/YashRaJShaRMaCODE/sourceasia-backend-assignment/internal/store"
 )
 
 func TestRateLimiter_Concurrency(t *testing.T) {
@@ -13,7 +12,7 @@ func TestRateLimiter_Concurrency(t *testing.T) {
 	userID := "test-user"
 	var wg sync.WaitGroup
 	numReqs := 10
-	
+
 	for i := 0; i < numReqs; i++ {
 		wg.Add(1)
 		go func() {

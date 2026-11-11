@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sourceasia/backend/internal/models"
+	"github.com/YashRaJShaRMaCODE/sourceasia-backend-assignment/internal/models"
 )
 
 type InMemoryStore struct {
@@ -63,8 +63,12 @@ func (s *InMemoryStore) GetStats() map[string]models.UserStats {
 
 	// Combine data
 	users := make(map[string]bool)
-	for k := range s.userWindows { users[k] = true }
-	for k := range s.userRejects { users[k] = true }
+	for k := range s.userWindows {
+		users[k] = true
+	}
+	for k := range s.userRejects {
+		users[k] = true
+	}
 
 	for userID := range users {
 		count := 0
@@ -82,21 +86,33 @@ func (s *InMemoryStore) GetStats() map[string]models.UserStats {
 }
 
 // Product Logic
-func (s *InMemoryStore) AddProduct(p *models.Product) error {
+func (s *InMemoryStore) AddProduct(p *models.Product) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.skuMap[p.SKU]; exists {
+		return false
+	}
 
-	s.products[p.ID] = p
+	copy := *p
+	copy.ImageURLs = append([]string(nil), p.ImageURLs...)
+	copy.VideoURLs = append([]string(nil), p.VideoURLs...)
+	s.products[p.ID] = &copy
 	s.productOrder = append(s.productOrder, p.ID)
 	s.skuMap[p.SKU] = p.ID
-	return nil
+	return true
 }
 
 func (s *InMemoryStore) GetProductByID(id string) (*models.Product, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	p, ok := s.products[id]
-	return p, ok
+	if !ok {
+		return nil, false
+	}
+	copy := *p
+	copy.ImageURLs = append([]string(nil), p.ImageURLs...)
+	copy.VideoURLs = append([]string(nil), p.VideoURLs...)
+	return &copy, true
 }
 
 func (s *InMemoryStore) GetProductBySKU(sku string) (string, bool) {
@@ -110,7 +126,7 @@ func (s *InMemoryStore) ListProducts(limit, offset int) []models.ProductSummary 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if offset >= len(s.productOrder) {
+	if limit <= 0 || offset < 0 || offset >= len(s.productOrder) {
 		return []models.ProductSummary{}
 	}
 
@@ -123,7 +139,7 @@ func (s *InMemoryStore) ListProducts(limit, offset int) []models.ProductSummary 
 	for i := offset; i < end; i++ {
 		id := s.productOrder[i]
 		p := s.products[id]
-		
+
 		thumb := ""
 		if len(p.ImageURLs) > 0 {
 			thumb = p.ImageURLs[0]

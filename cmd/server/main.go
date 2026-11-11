@@ -6,13 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/sourceasia/backend/internal/handlers"
-	"github.com/sourceasia/backend/internal/middleware"
-	"github.com/sourceasia/backend/internal/services"
-	"github.com/sourceasia/backend/internal/store"
+	"github.com/YashRaJShaRMaCODE/sourceasia-backend-assignment/internal/handlers"
+	"github.com/YashRaJShaRMaCODE/sourceasia-backend-assignment/internal/middleware"
+	"github.com/YashRaJShaRMaCODE/sourceasia-backend-assignment/internal/services"
+	"github.com/YashRaJShaRMaCODE/sourceasia-backend-assignment/internal/store"
 )
 
 func main() {
@@ -28,19 +29,25 @@ func main() {
 
 	// Setup Router
 	mux := http.NewServeMux()
-	
-	// Middleware wrapping
 	withLogging := middleware.Logging
-	
+
 	mux.HandleFunc("/health", h.HealthCheck)
 	mux.HandleFunc("/request", withLogging(h.HandleRequest))
 	mux.HandleFunc("/stats", withLogging(h.HandleStats))
 	mux.HandleFunc("/products", withLogging(h.HandleProducts))
 	mux.HandleFunc("/products/", withLogging(h.HandleProductByID))
 
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
 	server := &http.Server{
-		Addr:    ":8080",
-		Handler: mux,
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Graceful Shutdown
