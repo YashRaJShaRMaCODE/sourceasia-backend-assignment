@@ -122,17 +122,18 @@ func (s *InMemoryStore) GetProductBySKU(sku string) (string, bool) {
 	return id, ok
 }
 
-func (s *InMemoryStore) ListProducts(limit, offset int) []models.ProductSummary {
+func (s *InMemoryStore) ListProducts(limit, offset int) ([]models.ProductSummary, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if limit <= 0 || offset < 0 || offset >= len(s.productOrder) {
-		return []models.ProductSummary{}
+	total := len(s.productOrder)
+	if limit <= 0 || offset < 0 || offset >= total {
+		return []models.ProductSummary{}, total
 	}
 
 	end := offset + limit
-	if end > len(s.productOrder) {
-		end = len(s.productOrder)
+	if end > total {
+		end = total
 	}
 
 	res := make([]models.ProductSummary, 0, end-offset)
@@ -154,7 +155,7 @@ func (s *InMemoryStore) ListProducts(limit, offset int) []models.ProductSummary 
 			ThumbnailURL: thumb,
 		})
 	}
-	return res
+	return res, total
 }
 
 func (s *InMemoryStore) UpdateProductMedia(id string, imgs, vids []string) bool {

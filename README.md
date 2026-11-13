@@ -33,7 +33,7 @@ curl -X POST http://localhost:8080/products \
   -d '{"name":"Desk lamp","sku":"LAMP-001","image_urls":["https://example.com/lamp.jpg"]}'
 ```
 
-`/request` expects `{"user_id":"demo-user","payload":{}}`. It accepts up to five requests per user ID per rolling minute. Product list limits default to 20 and cap at 100; each media request accepts at most 20 URLs per type. JSON request bodies are limited to 1 MiB.
+`/request` expects `{"user_id":"demo-user","payload":{}}`. User IDs are trimmed, required, and limited to 128 bytes; each ID accepts up to five requests per rolling minute. Product list limits default to 20 and cap at 100; responses include the total product count, and each media request accepts at most 20 URLs per type. JSON request bodies are limited to 1 MiB; oversized bodies return `413`, and malformed bodies return `400`.
 
 ## Checks
 

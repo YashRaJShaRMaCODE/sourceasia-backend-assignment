@@ -40,6 +40,7 @@ type ProductListResponse struct {
 	Items  []ProductSummary `json:"items"`
 	Limit  int              `json:"limit"`
 	Offset int              `json:"offset"`
+	Total  int              `json:"total"`
 }
 
 type AddMediaRequest struct {

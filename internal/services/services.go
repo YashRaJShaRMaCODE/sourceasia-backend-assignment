@@ -96,7 +96,7 @@ func (s *RateLimitService) GetStats() models.StatsResponse {
 	return models.StatsResponse{Users: s.store.GetStats()}
 }
 
-func (s *ProductService) ListProducts(limit, offset int) []models.ProductSummary {
+func (s *ProductService) ListProducts(limit, offset int) ([]models.ProductSummary, int) {
 	return s.store.ListProducts(limit, offset)
 }
 
